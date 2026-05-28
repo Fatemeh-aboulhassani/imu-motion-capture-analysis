@@ -1,12 +1,11 @@
-
-
-
-
 import time
 import threading
-import os
 import subprocess
 from collections import deque
+
+import socket
+import os
+
 
 import xsensdeviceapi as xda
 from pylsl import StreamInfo, StreamOutlet, local_clock
@@ -14,7 +13,13 @@ from pylsl import StreamInfo, StreamOutlet, local_clock
 
 # ---------- USER SETTINGS ----------
 # Leave empty to accept ALL MTw that connect.
-MTW_IDS_ALLOWLIST = ["00B4D0C2", "00B4D0D0","00B4D0C8","00B4D0BF","00B4D0C4","00B4D0BE","00B4D0C5"]
+MTW_IDS_ALLOWLIST = ["00B4D0C2", 
+                    "00B4D0D0",
+                    "00B4D0C8",
+                    "00B4D0BF",
+                    "00B4D0C4",
+                    "00B4D0BE",
+                    "00B4D0C5"]
 
 PREFERRED_CHANNEL = 11          # Wireless channel (as in MT Manager)
 TARGET_RATE_HZ    = 100         # What you want (matches MT Manager "Rate (Hz)")
@@ -24,82 +29,22 @@ LSL_TYPE   = "IMU"
 # ----------------------------------
 
 
-# ---------- QUALISYS LSL APP SETTINGS ----------
-# This opens the official Qualisys LSL App GUI.
-# You will still press Start manually inside that GUI.
-AUTO_OPEN_QUALISYS_LSL_APP = True
-
-QUALISYS_LSL_APP_DIR = r"C:\Users\abolhassni\Desktop\TU Darmstadt\Term3\ANSYMB\LSL\qualisys_lsl_app"
-QUALISYS_PYTHON_EXE = r"C:\Users\abolhassni\anaconda3\envs\qualisys_lsl\python.exe"
-# -----------------------------------------------
-
 
 # ---------- LABRECORDER SETTINGS ----------
-# This opens LabRecorder only.
-# Stream selection and Start Recording stay manual.
 AUTO_OPEN_LABRECORDER = True
+AUTO_START_RECORDING = False
 
 LABRECORDER_EXE = r"C:\Users\abolhassni\Desktop\TU Darmstadt\Term3\ANSYMB\Software\LabRecorder\LabRecorder.exe"
+
+LABRECORDER_RCS_HOST = "127.0.0.1"
+LABRECORDER_RCS_PORT = 22345
+
+RECORDING_ROOT = r"C:\Users\abolhassni\Desktop\TU Darmstadt\Term3\ANSYMB\LSL\recordings"
+RECORDING_TEMPLATE = "test_%n.xdf"
 # -----------------------------------------
 
 
 
-def start_qualisys_lsl_app():
-    """
-    Opens the official Qualisys LSL App GUI.
-    You still press Start manually inside the Qualisys window.
-    """
-    if not AUTO_OPEN_QUALISYS_LSL_APP:
-        return None
-
-    if not os.path.isdir(QUALISYS_LSL_APP_DIR):
-        print(f"[QTM ERROR] Folder not found: {QUALISYS_LSL_APP_DIR}")
-        return None
-
-    if not os.path.exists(QUALISYS_PYTHON_EXE):
-        print(f"[QTM ERROR] Python exe not found: {QUALISYS_PYTHON_EXE}")
-        print("[QTM ERROR] Check it with: conda activate qualisys_lsl  then  where python")
-        return None
-
-    print("[QTM] Opening Qualisys LSL App...")
-
-    try:
-        process = subprocess.Popen(
-            [QUALISYS_PYTHON_EXE, "-m", "qlsl.gui"],
-            cwd=QUALISYS_LSL_APP_DIR,
-            creationflags=subprocess.CREATE_NEW_CONSOLE
-        )
-        print("[QTM] Qualisys LSL App opened.")
-        return process
-
-    except Exception as e:
-        print(f"[QTM ERROR] Could not open Qualisys LSL App: {e}")
-        return None
-
-
-def start_labrecorder():
-    """
-    Opens LabRecorder only.
-    Stream selection and Start Recording stay manual.
-    """
-    if not AUTO_OPEN_LABRECORDER:
-        return None
-
-    if not os.path.exists(LABRECORDER_EXE):
-        print(f"[LabRecorder ERROR] File not found: {LABRECORDER_EXE}")
-        print("[LabRecorder ERROR] Please fix LABRECORDER_EXE path.")
-        return None
-
-    print("[LabRecorder] Opening LabRecorder...")
-
-    try:
-        process = subprocess.Popen([LABRECORDER_EXE])
-        print("[LabRecorder] LabRecorder opened.")
-        return process
-
-    except Exception as e:
-        print(f"[LabRecorder ERROR] Could not open LabRecorder: {e}")
-        return None
 
 
 class PacketBuffer(xda.XsCallback):
@@ -132,8 +77,7 @@ def make_outlet(device_id_str: str):
         "ax","ay","az",
         "gx","gy","gz",
         "mx","my","mz",
-        "packet_counter","sample_time_fine"
-    ]
+        "packet_counter","sample_time_fine"]
     info = StreamInfo(
         name=f"{LSL_PREFIX}_{device_id_str}",
         type=LSL_TYPE,
@@ -170,7 +114,9 @@ def packet_to_sample(pkt: xda.XsDataPacket):
     else:
         gx = gy = gz = float("nan")
 
+
     # Magnetometer
+
     if pkt.containsCalibratedMagneticField():
         m = pkt.calibratedMagneticField()
         mx, my, mz = float(m[0]), float(m[1]), float(m[2])
@@ -188,13 +134,11 @@ def packet_to_sample(pkt: xda.XsDataPacket):
     except Exception:
         stf = float("nan")
 
-    return [
-        qw,qx,qy,qz,
-        ax,ay,az,
-        gx,gy,gz,
-        mx,my,mz,
-        pc, stf
-    ]
+    return [qw,qx,qy,qz,
+            ax,ay,az,
+            gx,gy,gz,
+            mx,my,mz,
+            pc, stf]
 
 
 def find_awinda_master(control: "xda.XsControl"):
@@ -263,14 +207,87 @@ def try_set_master_rate(master, target_hz: int) -> bool:
     return ok and (newv == target_hz)
 
 
-def main():
-    qtm_lsl_process = start_qualisys_lsl_app()
 
-    if AUTO_OPEN_QUALISYS_LSL_APP:
-        input(
-            "\n[STEP] If the Qualisys LSL App opened, press Start inside that window. "
-            "When the Qualisys stream is running, press ENTER here...\n"
-        )
+# ---------- LABRECORDER HELPER FUNCTIONS ----------
+def start_labrecorder():
+    """
+    Opens LabRecorder automatically.
+    Your IMU code stays unchanged; this only starts the external LabRecorder program.
+    """
+    if not AUTO_OPEN_LABRECORDER:
+        return None
+
+    if not os.path.exists(LABRECORDER_EXE):
+        print(f"[LabRecorder ERROR] File not found: {LABRECORDER_EXE}")
+        print("[LabRecorder ERROR] Please check LABRECORDER_EXE in USER SETTINGS.")
+        return None
+
+    print("[LabRecorder] Opening LabRecorder...")
+    try:
+        process = subprocess.Popen([LABRECORDER_EXE])
+        time.sleep(3.0)  # give LabRecorder time to open and start Remote Control Socket
+        print("[LabRecorder] Opened.")
+        return process
+    except Exception as e:
+        print(f"[LabRecorder ERROR] Could not open LabRecorder: {e}")
+        return None
+
+
+def send_labrecorder_command(command: str):
+    """
+    Sends a command to LabRecorder via Remote Control Socket.
+    LabRecorder.cfg must have:
+        RCSEnabled=1
+        RCSPort=22345
+    """
+    try:
+        with socket.create_connection(
+            (LABRECORDER_RCS_HOST, LABRECORDER_RCS_PORT),
+            timeout=3
+        ) as s:
+            s.sendall((command + "\n").encode("utf-8"))
+
+        print(f"[LabRecorder] Sent command: {command}")
+
+    except Exception as e:
+        print(f"[LabRecorder WARN] Could not send command: {command}")
+        print(f"[LabRecorder WARN] {e}")
+        print("[LabRecorder WARN] Make sure LabRecorder is open and Remote Control is enabled.")
+
+
+def configure_labrecorder():
+    """
+    Refreshes streams, selects visible streams, and sets output file name.
+    If Qualisys LSL App is already streaming, 'select all' will also select Qualisys.
+    """
+    if not AUTO_OPEN_LABRECORDER:
+        return
+
+    os.makedirs(RECORDING_ROOT, exist_ok=True)
+
+    # Refresh stream list
+    send_labrecorder_command("update")
+    time.sleep(1.0)
+
+    # Select all visible LSL streams
+    send_labrecorder_command("select all")
+    time.sleep(0.5)
+
+    # Set output file path/template
+    cmd = f'filename {{root:{RECORDING_ROOT}}} {{template:{RECORDING_TEMPLATE}}}'
+    send_labrecorder_command(cmd)
+
+    if AUTO_START_RECORDING:
+        time.sleep(0.5)
+        send_labrecorder_command("start")
+        print("[LabRecorder] Recording started automatically.")
+    else:
+        print("[LabRecorder] Streams selected. Press Start manually in LabRecorder.")
+# -------------------------------------------------
+
+
+def main():
+    labrecorder_process = None
 
     control = xda.XsControl_construct()
     if control == 0:
@@ -331,12 +348,7 @@ def main():
 
     labrecorder_process = start_labrecorder()
 
-    print(
-        "\n[INFO] LabRecorder is opened after Awinda was found and measurement was started. "
-        "Select Xsens and Qualisys streams manually, then press Start Recording manually.\n"
-    )
-
-    print("\nStreaming to LSL. Open LabRecorder. Ctrl+C to stop.\n")
+    print("\nStreaming to LSL. LabRecorder is opened after Awinda was found and measurement started. Ctrl+C to stop.\n")
 
     outlets = {}
     last_seen = {}
@@ -350,6 +362,8 @@ def main():
     pc_last = {}
     pc_t_last = {}
     hz_pc = {}
+
+    labrecorder_configured = False
 
     try:
         while True:
@@ -371,6 +385,11 @@ def main():
                     n_samples[src_id] = 0
                     last_report_n[src_id] = 0
                     print(f"[NEW] LSL stream created: {LSL_PREFIX}_{src_id}")
+
+                    if AUTO_OPEN_LABRECORDER and not labrecorder_configured:
+                        time.sleep(2.0)
+                        configure_labrecorder()
+                        labrecorder_configured = True
 
                 # push to LSL
                 outlets[src_id].push_sample(packet_to_sample(pkt), local_clock())
