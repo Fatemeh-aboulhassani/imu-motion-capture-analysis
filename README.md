@@ -58,11 +58,15 @@ analysis of IMU and motion capture data for biomechanical movement assessment
 ```
 
 ---------------------------------------------------------------------------------
+## Xsens-LSL Setup Guide
 
+This guide explains how to set up a clean Conda environment for streaming Xsens MTw sensor data through LSL and recording it with LabRecorder.
+
+---
 
 ## 1. Check Conda Installation
 
-Open Anaconda Prompt or PowerShell and verify that Conda is available:
+Open **Anaconda Prompt** or **PowerShell** and verify that Conda is available:
 
 ```bash
 conda --version
@@ -125,25 +129,50 @@ Upgrade pip:
 python -m pip install --upgrade pip
 ```
 
-Install the required packages:
+Install NumPy 1.x first, because the Xsens Device API wheel used in this project is not compatible with NumPy 2.x:
 
 ```bash
-python -m pip install pylsl numpy pandas matplotlib pyxdf
+python -m pip install "numpy<2"
+```
+
+Install the other required packages:
+
+```bash
+python -m pip install pylsl pandas matplotlib
+```
+
+Install a pyxdf version compatible with NumPy 1.x:
+
+```bash
+python -m pip install "pyxdf<1.17"
 ```
 
 Verify the installation:
 
 ```bash
-python -c "import pylsl, numpy, pandas; print('Packages installed successfully')"
+python -c "import pylsl, numpy, pandas, pyxdf; print('Packages installed successfully')"
 ```
 
 ---
 
 ## 5. Install the Xsens Device API (XDA)
 
-Download and install the Xsens Device API (SDK) provided by Movella/Xsens.
+The Xsens Device API is not installed from the internet with a normal `pip install`.
+It is provided by the Movella/Xsens MT SDK as a local `.whl` file.
 
-After installation, verify that Python can access the SDK:
+Navigate to the SDK folder that contains the Xsens wheel files:
+
+```bash
+cd "C:\Users\abolhassni\Desktop\TU Darmstadt\Term3\ANSYMB\LSL\MT SDK\Python\x64"
+```
+
+Install the wheel file that matches Python 3.10:
+
+```bash
+python -m pip install xsensdeviceapi-2022.2.0-cp310-none-win_amd64.whl
+```
+
+Verify that Python can access the SDK:
 
 ```bash
 python -c "import xsensdeviceapi as xda; print('XDA OK')"
@@ -157,7 +186,29 @@ XDA OK
 
 ---
 
-## 6. Clone the Repository
+## 6. Add the Environment to Jupyter / VS Code
+
+Install the Jupyter kernel package:
+
+```bash
+python -m pip install ipykernel
+```
+
+Register the environment as a Jupyter kernel:
+
+```bash
+python -m ipykernel install --user --name xsens --display-name "Python (xsens)"
+```
+
+After this, restart VS Code or Jupyter and select the kernel:
+
+```text
+Python (xsens)
+```
+
+---
+
+## 7. Clone the Repository
 
 Navigate to the desired project directory:
 
@@ -179,7 +230,7 @@ cd imu_motion_capture_analysis
 
 ---
 
-## 7. Open the Project in VS Code
+## 8. Open the Project in VS Code
 
 Open the project folder:
 
@@ -202,7 +253,7 @@ Python 3.10 (xsens)
 
 ---
 
-## 8. Connect the Awinda Station
+## 9. Connect the Awinda Station
 
 Connect the Xsens Awinda Station via USB.
 
@@ -212,7 +263,7 @@ Close MT Manager before running the Python script to avoid communication conflic
 
 ---
 
-## 9. Configure the Sensor Parameters
+## 10. Configure the Sensor Parameters
 
 In the Python script, define:
 
@@ -223,12 +274,20 @@ TARGET_RATE_HZ = 100
 
 where:
 
-- `PREFERRED_CHANNEL` = wireless communication channel
-- `TARGET_RATE_HZ` = desired sampling frequency
+```text
+PREFERRED_CHANNEL = wireless communication channel
+TARGET_RATE_HZ = desired sampling frequency
+```
 
 ---
 
-## 10. Start the LSL Stream
+## 11. Start the LSL Stream
+
+Activate the environment:
+
+```bash
+conda activate xsens
+```
 
 Run the script:
 
@@ -248,7 +307,7 @@ The script will:
 
 ---
 
-## 11. Verify the Available Streams
+## 12. Verify the Available Streams
 
 The following streams should appear:
 
@@ -264,7 +323,7 @@ Xsens_MTw2_00B4D0C5
 
 ---
 
-## 12. Record Data Using LabRecorder
+## 13. Record Data Using LabRecorder
 
 Start LabRecorder.
 
@@ -282,15 +341,15 @@ The recorded data will be saved as:
 
 ---
 
-## 13. Recorded Signals
+## 14. Recorded Signals
 
 Each stream contains:
 
-| Signal | Description |
-|----------|----------|
-| qw, qx, qy, qz | Quaternion orientation |
-| ax, ay, az | Accelerometer |
-| gx, gy, gz | Gyroscope |
-| mx, my, mz | Magnetometer |
-| packet_counter | Packet counter |
-| sample_time_fine | Sensor timestamp |
+| Signal             | Description            |
+| ------------------ | ---------------------- |
+| `qw, qx, qy, qz`   | Quaternion orientation |
+| `ax, ay, az`       | Accelerometer data     |
+| `gx, gy, gz`       | Gyroscope data         |
+| `mx, my, mz`       | Magnetometer data      |
+| `packet_counter`   | Packet counter         |
+| `sample_time_fine` | Sensor timestamp       |
